@@ -1,0 +1,33 @@
+{
+  "name": "atanor",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "build:engine": "node scripts/build-engine.js",
+    "postinstall": "node scripts/build-engine.js",
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios"
+  },
+  "dependencies": {
+    "expo": "^58.0.0",
+    "react": "*",
+    "react-native": "*",
+    "react-native-webview": "*",
+    "react-native-svg": "*",
+    "react-native-safe-area-context": "*",
+    "expo-document-picker": "*",
+    "expo-file-system": "*",
+    "expo-font": "*",
+    "expo-localization": "*",
+    "expo-sharing": "*",
+    "@react-native-async-storage/async-storage": "*",
+    "lucide-react-native": "*",
+    "@expo-google-fonts/cinzel": "*",
+    "@expo-google-fonts/cinzel-decorative": "*",
+    "@expo-google-fonts/inter": "*",
+    "@expo-google-fonts/jetbrains-mono": "*",
+    "jszip": "3.10.1",
+    "pdfjs-dist": "3.11.174"
+  }
+}

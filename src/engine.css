@@ -1,0 +1,5 @@
+html,body{margin:0;height:100%}body{background:#000;color:#E0E6ED;font-family:Inter,system-ui,-apple-system,sans-serif}body.nt{color:#9AA3AD}
+/* Tema claro do leitor: variante de papel (paper #F5F6F9, ink #111418, violet #6D28D9), sem glow nem degradê */
+body.lt{background:#F5F6F9;color:#111418}body.lt #rc a{color:#6D28D9}body.lt #iv{background:#F5F6F9}
+#rv{height:100%;box-sizing:border-box;padding:12px 0}#rv.sc{overflow-y:auto}#rv.pg{overflow:hidden}#rc{position:relative}.pg #rc{height:100%}#rc img{max-width:100%;height:auto}#rc p{margin:.7em 0}#rc a{color:#A78BFA}
+#iv{height:100%;display:flex;align-items:center;justify-content:center;background:#000}#iv[hidden]{display:none}#pi{max-width:100%;max-height:100%}
