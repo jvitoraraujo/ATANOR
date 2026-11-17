@@ -38,7 +38,21 @@ npx expo start       # Expo Go, ou: npx expo run:android | run:ios
 ## IV. Inscrições e Registros
 
 - `1.0.0`: biblioteca com seis abas, importação em lote, conversão local de PDF, leitor de texto e de imagens, progresso persistido.
-- Pendente: importação de pasta, coleções, backup, marcadores e busca no livro, MOBI, AZW3 e CBR.
+- `1.2.0`: revisão de erros e desempenho (ver abaixo), 49 testes do motor, bloqueio de rede no leitor.
+- `1.1.0`: leitor com deslize animado entre páginas, página dupla em paisagem, duplo toque para zoom, busca no livro, marcadores, barra de progresso arrastável, CBR (quando for ZIP renomeado).
+- Pendente: MOBI e AZW3, CBR em formato RAR, importação de pasta, coleções, backup.
+
+## Testes
+
+O motor (importação, conversão de PDF, leitor de texto e de quadrinhos, busca, gestos) roda em Chromium headless, sem celular:
+
+```bash
+pip install playwright pillow && playwright install chromium
+npm run test:engine          # 49 testes; usa tests/make_fixtures.py para gerar EPUB, CBZ e PDFs de teste
+python3 tests/perf_test.py /tmp/engine.html   # carga: EPUB de 200 capítulos, CBZ de 200 páginas
+```
+
+A interface React Native não tem testes automatizados: valide no aparelho.
 
 ## V. Selos Finais
 

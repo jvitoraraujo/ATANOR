@@ -20,8 +20,10 @@
       "package": "app.atanor.reader",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#000000"
-      }
+        "backgroundColor": "#000000",
+        "monochromeImage": "./assets/adaptive-monochrome.png"
+      },
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/favicon.png"

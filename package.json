@@ -7,7 +7,9 @@
     "postinstall": "node scripts/build-engine.js",
     "start": "expo start",
     "android": "expo start --android",
-    "ios": "expo start --ios"
+    "ios": "expo start --ios",
+    "build:apk": "eas build -p android --profile preview",
+    "test:engine": "python3 tests/make_fixtures.py /tmp/fx && node scripts/build-engine.js && node -e \"const s=require('fs').readFileSync('src/engineHtml.js','utf8').replace(/^export default /,'').replace(/;\\\\s*$/,'');require('fs').writeFileSync('/tmp/engine.html',JSON.parse(s))\" && python3 tests/engine_test.py /tmp/engine.html /tmp/fx"
   },
   "dependencies": {
     "expo": "^58.0.0",
