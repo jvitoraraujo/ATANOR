@@ -8,6 +8,8 @@ import { File as FSFile } from 'expo-file-system'; // API clássica; vale a part
 import * as Sharing from 'expo-sharing';
 import { getLocales } from 'expo-localization';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+// Armazenamento tolerante a falhas: se o módulo nativo faltar (versão errada no Expo Go), o app segue funcionando só em memória
+const kv = { get: async k => { try { return await AsyncStorage.getItem(k); } catch { return null; } }, set: async (k, v) => { try { await AsyncStorage.setItem(k, v); } catch { } } };
 import ENGINE from './src/engineHtml';
 import { useFonts } from 'expo-font';
 import { CinzelDecorative_700Bold } from '@expo-google-fonts/cinzel-decorative';
@@ -40,6 +42,8 @@ Object.assign(S.pt, {
 Object.assign(S.en, { lib: 'Library', done: 'Record saved.', thm: 'Reader theme', tDark: 'Dark', tNight: 'Night', tLight: 'Light' });
 Object.assign(S.pt, { page: 'Página', of: 'de', rem: 'páginas restantes no capítulo', txt: 'Texto', lum: 'Iluminação', ffs: 'Serifa', ffsa: 'Sans', ffm: 'Mono', alL: 'Esquerda', alJ: 'Justificado', dbl: 'Página dupla (paisagem)', pgm: 'Paginação (desligado = rolagem contínua)', sch: 'Buscar no livro…', none: 'Nenhum resultado.', nomk: 'Nenhum marcador. Toque no ícone de marcador para salvar a posição.', marks: 'Marcadores', rar: 'CBR em formato RAR ainda não é suportado. Converta para CBZ.', unsup: 'MOBI e AZW3 ainda não são suportados nesta versão. Converta para EPUB (por exemplo, com o Calibre).', align: 'Alinhamento' });
 Object.assign(S.en, { page: 'Page', of: 'of', rem: 'pages left in chapter', txt: 'Text', lum: 'Lighting', ffs: 'Serif', ffsa: 'Sans', ffm: 'Mono', alL: 'Left', alJ: 'Justified', dbl: 'Double page (landscape)', pgm: 'Paginated (off = continuous scroll)', sch: 'Search in book…', none: 'No results.', nomk: 'No bookmarks.', marks: 'Bookmarks', rar: 'RAR-based CBR is not supported yet. Convert to CBZ.', unsup: 'MOBI and AZW3 are not supported in this version. Convert to EPUB (e.g. with Calibre).', align: 'Alignment' });
+Object.assign(S.pt, { anim: 'Animação da página', aFlip: 'Virar', aSlide: 'Deslizar', aNone: 'Nenhuma' });
+Object.assign(S.en, { anim: 'Page animation', aFlip: 'Flip', aSlide: 'Slide', aNone: 'None' });
 Object.assign(S.pt, { opening: 'Abrindo…', hint: 'Toque duas vezes no centro da tela, ou faça o movimento de pinça para dentro, para abrir os controles.' });
 Object.assign(S.en, { opening: 'Opening…', hint: 'Double-tap the center of the screen, or pinch in, to show the controls.' });
 Object.assign(S.pt, { sort: 'Ordenar', sortby: 'Ordenar por', asc: 'Crescente', desc: 'Decrescente', clear: 'Limpar filtro', nofilter: 'Sem filtro' });
@@ -65,7 +69,7 @@ export default function App() {
   const [tab, setTab] = useState('all'), [q, setQ] = useState(''), [sort, setSort] = useState(null), [asc, setAsc] = useState(false);
   const [fk, setFk] = useState(''), [fv, setFv] = useState('');
   const [sheet, setSheet] = useState(null), [reading, setReading] = useState(null), [busy, setBusy] = useState('');
-  const [set, setSetS] = useState({ fs: 18, m: 20, lh: 1.6, br: 100, night: false, light: false, pg: true, rtl: false, dbl: false, ff: 'serif', al: 'left' });
+  const [set, setSetS] = useState({ fs: 18, m: 20, lh: 1.6, br: 100, night: false, light: false, pg: true, rtl: false, dbl: false, ff: 'serif', al: 'left', anim: 'flip' });
   const [toc, setToc] = useState([]), [cur, setCur] = useState({ progress: 0, page: 0, pages: 0, rem: 0, snip: '' }), [chrome, setChrome] = useState(false);
   const [panel, setPanel] = useState(null), [stab, setStab] = useState('txt'), [ttab, setTtab] = useState('toc'), [results, setResults] = useState([]), [sq, setSq] = useState('');
   const [opened, setOpened] = useState(false), [fmode, setFmode] = useState(0);
@@ -77,12 +81,12 @@ export default function App() {
   useEffect(() => { Animated.timing(chromeA, { toValue: chrome ? 1 : 0, duration: 220, useNativeDriver: true }).start(); }, [chrome]);
   const eng = useRef(null), rdr = useRef(null), pend = useRef({}), asked = useRef(new Set());
 
-  useEffect(() => { (async () => { try { const bk = JSON.parse((await AsyncStorage.getItem('books')) || '[]'), st = JSON.parse((await AsyncStorage.getItem('set2')) || '{}'); setBooks(bk.map(rebase)); setSetS(p => ({ ...p, ...st })); } catch { } loadedRef.current = true; setLoaded(true); })(); }, []);
+  useEffect(() => { (async () => { try { const bk = JSON.parse((await kv.get('books')) || '[]'), st = JSON.parse((await kv.get('set2')) || '{}'); setBooks(bk.map(rebase)); setSetS(p => ({ ...p, ...st })); } catch { } loadedRef.current = true; setLoaded(true); })(); }, []);
   const booksRef = useRef(books), loadedRef = useRef(false); booksRef.current = books;
   // grava com atraso (agrupa avanços de página) e força a gravação ao ir para segundo plano
-  useEffect(() => { if (!loaded) return; const h = setTimeout(() => AsyncStorage.setItem('books', JSON.stringify(books)), 700); return () => clearTimeout(h); }, [books, loaded]);
-  useEffect(() => { if (!loaded) return; const h = setTimeout(() => AsyncStorage.setItem('set2', JSON.stringify(set)), 400); return () => clearTimeout(h); }, [set, loaded]);
-  useEffect(() => { const sub = AppState.addEventListener('change', st => { if (st !== 'active' && loadedRef.current) AsyncStorage.setItem('books', JSON.stringify(booksRef.current)); }); return () => sub.remove(); }, []);
+  useEffect(() => { if (!loaded) return; const h = setTimeout(() => kv.set('books', JSON.stringify(books)), 700); return () => clearTimeout(h); }, [books, loaded]);
+  useEffect(() => { if (!loaded) return; const h = setTimeout(() => kv.set('set2', JSON.stringify(set)), 400); return () => clearTimeout(h); }, [set, loaded]);
+  useEffect(() => { const sub = AppState.addEventListener('change', st => { if (st !== 'active' && loadedRef.current) kv.set('books', JSON.stringify(booksRef.current)); }); return () => sub.remove(); }, []);
   useEffect(() => { if (!menu) return; const sub = BackHandler.addEventListener('hardwareBackPress', () => { setMenu(null); return true; }); return () => sub.remove(); }, [menu]);
   const upd = (id, p) => setBooks(bs => bs.map(b => b.id === id ? { ...b, ...p } : b));
 
@@ -305,9 +309,11 @@ export default function App() {
                 <Stepper s={s} label={`${t('margin')}: ${set.m}`} onMinus={() => changeSet({ m: Math.max(0, set.m - 6) })} onPlus={() => changeSet({ m: Math.min(60, set.m + 6) })} />
                 <Text style={s.mut}>{t('align')}</Text><View style={s.wrap}>{[['left', 'alL'], ['justify', 'alJ']].map(([k, l]) => <Chip key={k} s={s} on={set.al === k} onPress={() => changeSet({ al: k })}>{t(l)}</Chip>)}</View>
                 <Sw s={s} label={t('pgm')} value={set.pg} on={v => changeSet({ pg: v })} />
+                <Text style={s.mut}>{t('anim')}</Text><View style={s.wrap}>{[['flip', 'aFlip'], ['slide', 'aSlide'], ['none', 'aNone']].map(([k, l]) => <Chip key={k} s={s} on={set.anim === k} onPress={() => changeSet({ anim: k })}>{t(l)}</Chip>)}</View>
                 <Sw s={s} label={t('dbl')} value={set.dbl} on={v => changeSet({ dbl: v })} />
               </>}
               {stab === 'txt' && reading?.mode === 'img' && <>
+                <Text style={s.mut}>{t('anim')}</Text><View style={s.wrap}>{[['flip', 'aFlip'], ['slide', 'aSlide'], ['none', 'aNone']].map(([k, l]) => <Chip key={k} s={s} on={set.anim === k} onPress={() => changeSet({ anim: k })}>{t(l)}</Chip>)}</View>
                 <Sw s={s} label={t('rtl')} value={set.rtl} on={v => changeSet({ rtl: v })} />
                 <Sw s={s} label={t('dbl')} value={set.dbl} on={v => changeSet({ dbl: v })} />
               </>}

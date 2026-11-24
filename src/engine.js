@@ -104,9 +104,10 @@ async function importBook(m) {
 }
 
 /* Leitor: paginação com deslize e animação, página dupla, zoom, busca, marcadores (posição) */
-let R = { fs: 18, m: 20, lh: 1.6, br: 100, night: false, light: false, pg: true, rtl: false, dbl: false, ff: 'serif', al: 'left' }, api = {};
+let R = { fs: 18, m: 20, lh: 1.6, br: 100, night: false, light: false, pg: true, rtl: false, dbl: false, ff: 'serif', al: 'left', anim: 'flip' }, api = {};
 const FF = { serif: 'Georgia,serif', sans: 'Inter,system-ui,sans-serif', mono: 'ui-monospace,monospace' };
 const wait = ms => new Promise(r => setTimeout(r, ms));
+const easeIO = k => k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2, easeO = k => 1 - Math.pow(1 - k, 3);
 function applySet(s) { R = { ...R, ...s }; document.body.className = R.light ? 'lt' : R.night ? 'nt' : ''; document.body.style.filter = `brightness(${R.br}%)`; api.lay && api.lay(); }
 async function readBook(m) {
   applySet(m.set); api = {};
@@ -116,8 +117,8 @@ async function readBook(m) {
 
 async function readImg(m, z, info) {
   const v = $('#rv'), iv = $('#iv'); v.hidden = true; iv.hidden = false;
-  iv.innerHTML = '<div id="sp"><div id="zm"><img id="pi" alt=""><img id="pj" alt=""></div></div>';
-  const sp = $('#sp'), zm = $('#zm'), A = $('#pi'), B = $('#pj');
+  iv.innerHTML = '<div id="sp2"><div id="zm2"><img id="pa2" alt=""><img id="pb2" alt=""></div></div><div id="shdi"></div><div id="sp"><div id="zm"><img id="pi" alt=""><img id="pj" alt=""></div></div>';
+  const sp = $('#sp'), zm = $('#zm'), A = $('#pi'), B = $('#pj'), sp2 = $('#sp2'), zm2 = $('#zm2'), A2 = $('#pa2'), B2 = $('#pb2'), shi = $('#shdi');
   const pg = m.kind === 'cbz' ? cbzPages(z) : await imgHrefs(z, info), n = pg.length;
   let i = 0, sc = 1, tx = 0, ty = 0, busy = 0, ready = 0, pz = 0;
   const dbl = () => R.dbl && innerWidth > innerHeight, ap = () => { zm.style.transform = `translate(${tx}px,${ty}px) scale(${sc})`; };
@@ -131,9 +132,25 @@ async function readImg(m, z, info) {
     get(nx); get(nx + 1);                                                    // pré-carrega as próximas páginas
     for (const [kk, pr] of cache) if (kk < k - 3 || kk > k + 5) { pr.then(x => URL.revokeObjectURL(x)); cache.delete(kk); }   // libera as distantes
   }
+  /* Virada realista nos quadrinhos: a página atual gira em torno da lombada (esquerda; direita no modo mangá) e revela a próxima por baixo */
+  async function turnImg(dir, t) {
+    const IW = iv.clientWidth, rtl = R.rtl, fwd = dir > 0, two = dbl() && t > 0 && t + 1 < n, u0 = await get(t), u1 = two ? await get(t + 1) : null;
+    A2.src = u0; if (u1) { B2.src = u1; B2.style.display = ''; } else { B2.removeAttribute('src'); B2.style.display = 'none'; }
+    zm2.style.flexDirection = rtl ? 'row-reverse' : 'row';
+    const top = fwd ? sp : sp2, under = fwd ? sp2 : sp, sg = rtl ? 1 : -1;
+    sp2.style.visibility = 'visible'; under.style.zIndex = 1; top.style.zIndex = 3; shi.style.zIndex = 2; shi.style.display = 'block'; top.style.transformOrigin = rtl ? 'right center' : 'left center';
+    shi.style.background = `linear-gradient(to ${rtl ? 'left' : 'right'},rgba(0,0,0,.55),rgba(0,0,0,0))`;
+    const setP = p => { const th = (fwd ? p : 1 - p) * Math.PI / 2, ex = IW * Math.cos(th); top.style.transform = `rotateY(${sg * th * 180 / Math.PI}deg)`; top.style.filter = `brightness(${1 - .5 * Math.sin(th)})`; shi.style.transform = `translateX(${rtl ? IW - ex - 170 : ex}px)`; shi.style.opacity = (Math.sin(th) * (th > 1.2 ? Math.max(0, (Math.PI / 2 - th) / (Math.PI / 2 - 1.2)) : 1)).toFixed(3); };
+    setP(0); await new Promise(r => { const t0 = performance.now(), D = 440, stp = ts => { const k = Math.min(1, (ts - t0) / D); setP(easeIO(k)); if (k < 1) requestAnimationFrame(stp); else r(); }; requestAnimationFrame(stp); });
+    await show(t);
+    for (const x of [sp, sp2]) { x.style.transform = ''; x.style.filter = ''; x.style.zIndex = ''; x.style.transformOrigin = ''; } sp2.style.visibility = 'hidden'; shi.style.display = 'none';
+  }
   async function flip(dir) {
     if (busy) return; const t = dir > 0 ? (i === 0 ? 1 : i + (dbl() ? 2 : 1)) : (dbl() ? (i <= 1 ? 0 : i - 2) : i - 1);
-    if (t < 0 || t > n - 1 || t === i) return; busy = 1; get(t); const f = (R.rtl ? -1 : 1) * 50;   // a carga corre junto com a animação de saída
+    if (t < 0 || t > n - 1 || t === i) return; busy = 1; get(t);   // a carga corre junto com a animação de saída
+    if (R.anim === 'none') { await show(t); busy = 0; return; }
+    if (R.anim === 'flip') { await turnImg(dir, t); busy = 0; return; }
+    const f = (R.rtl ? -1 : 1) * 50;
     sp.style.transition = 'transform .16s ease-in,opacity .16s'; sp.style.transform = `translateX(${-dir * f}px)`; sp.style.opacity = 0; await wait(160);
     await show(t); sp.style.transition = 'none'; sp.style.transform = `translateX(${dir * f}px)`; void sp.offsetWidth;
     sp.style.transition = 'transform .22s ease-out,opacity .22s'; sp.style.transform = ''; sp.style.opacity = 1; await wait(220); busy = 0;
@@ -145,13 +162,15 @@ async function readImg(m, z, info) {
     if (P.size === 2) { const [a, b] = [...P.values()]; const rt = Math.hypot(a[0] - b[0], a[1] - b[1]) / d0; sc = Math.min(6, Math.max(1, s0 * rt)); if (sc === 1) tx = ty = 0; if (!pz && s0 <= 1.02 && rt < .8) { pz = 1; send({ type: 'chrome', on: true }); } } else if (sc > 1) { tx += nw[0] - p[0]; ty += nw[1] - p[1]; }
     ap();
   };
+  iv.onpointercancel = ev => { P.delete(ev.pointerId); };
   iv.onpointerup = ev => {
     P.delete(ev.pointerId); if (P.size) return; const dx = ev.clientX - sx, dy = ev.clientY - sy;
     if (sc <= 1.02 && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) { lt = 0; flip((dx < 0 ? 1 : -1) * (R.rtl ? -1 : 1)); return; }
     if (mv < 8) {
-      const now = Date.now();
-      if (now - lt < 300) { sc = sc > 1 ? 1 : 2.5; tx = ty = 0; ap(); lt = 0; } // duplo toque: zoom
-      else { lt = now; const x = ev.clientX / innerWidth; setTimeout(() => { if (lt && Date.now() - lt >= 290) { lt = 0; if (sc > 1) return; if (x < .3) flip(R.rtl ? 1 : -1); else if (x > .7) flip(R.rtl ? -1 : 1); else send({ type: 'tap' }); } }, 300); }
+      const now = Date.now(), x = ev.clientX / innerWidth;
+      if (sc <= 1.02 && (x < .3 || x > .7)) { lt = 0; flip(x < .3 ? (R.rtl ? 1 : -1) : (R.rtl ? -1 : 1)); return; }   // bordas: vira na hora, sem esperar o duplo toque
+      if (now - lt < 300) { sc = sc > 1 ? 1 : 2.5; tx = ty = 0; ap(); lt = 0; } // duplo toque (centro ou com zoom): zoom
+      else { lt = now; setTimeout(() => { if (lt && Date.now() - lt >= 290) { lt = 0; if (sc > 1) return; send({ type: 'tap' }); } }, 300); }
     }
   };
   api = { lay() { if (ready) show(i); }, goto: f => show(Math.round(f * (n - 1))) };
@@ -172,15 +191,63 @@ async function readText(m, z, info) {
   const prog = () => R.pg ? (pages > 1 ? page / (pages - 1) : 0) : (mx() > 0 ? v.scrollTop / mx() : 0);
   const snip = () => { try { const r = document.caretRangeFromPoint(Math.min(innerWidth - 8, R.m + 24), 70); return r ? r.startContainer.textContent.slice(r.startOffset, r.startOffset + 70).trim() : ''; } catch { return ''; } };
   const rep = () => { const nx = secP.find(x => x > page); send({ type: 'pos', pos: prog(), progress: prog(), page: R.pg ? page + 1 : 0, pages: R.pg ? pages : 0, rem: R.pg ? Math.max(0, (nx === undefined ? pages : nx) - page - 1) : 0, snip: snip() }); };
-  const toPage = (p, anim = true) => {
-    p = Math.max(0, Math.min(pages - 1, p)); const to = p * W, from = v.scrollLeft; page = p; cancelAnimationFrame(raf);
-    if (!anim || Math.abs(to - from) < 1) { v.scrollLeft = to; v.style.transform = ''; v.style.opacity = ''; return rep(); }
-    const t0 = performance.now(), D = 340;
-    const step = t => { const k = Math.min(1, (t - t0) / D), e = 1 - Math.pow(1 - k, 3), d = Math.sin(Math.PI * k); v.scrollLeft = from + (to - from) * e; v.style.transform = `scale(${1 - .03 * d})`; v.style.opacity = 1 - .2 * d; if (k < 1) raf = requestAnimationFrame(step); else { v.style.transform = ''; v.style.opacity = ''; rep(); } };
+  /* Virada de página realista (duas camadas): a página atual ('v') gira em torno da lombada e revela, por baixo, uma cópia do
+     texto ('v2') já na página de destino, com uma sombra que acompanha a borda da página que vira. Ao voltar, é a cópia que gira
+     de volta por cima. A página acompanha o dedo ao arrastar. Livros muito grandes usam a animação simples. */
+  let v2 = null, c2 = null, shd = null, tn = null;
+  const sync = () => { if (v2) { v2.className = v.className; c2.style.cssText = c.style.cssText; } };
+  const mkClone = () => {
+    if (v2 || pages > 1500 || c.getElementsByTagName('*').length > 100000) return;   // livros enormes: usa a animação simples (a cópia dobraria o custo de cada repaginação)
+    v2 = document.createElement('div'); v2.id = 'rv2'; c2 = c.cloneNode(true); c2.id = 'rc2'; v2.append(c2);
+    shd = document.createElement('div'); shd.id = 'shd'; document.body.insertBefore(v2, v); document.body.append(shd); sync();
+  };
+  const setP = p => {
+    if (!tn) return; tn.p = p; const th = (tn.dir > 0 ? p : 1 - p) * Math.PI / 2, top = tn.dir > 0 ? v : v2;
+    top.style.transform = `rotateY(${-th * 180 / Math.PI}deg)`; top.style.filter = `brightness(${1 - .5 * Math.sin(th)})`;
+    shd.style.transform = `translateX(${W * Math.cos(th)}px)`; shd.style.opacity = (Math.sin(th) * (th > 1.2 ? Math.max(0, (Math.PI / 2 - th) / (Math.PI / 2 - 1.2)) : 1)).toFixed(3);
+  };
+  const beginTurn = (dir, to) => {
+    if (!v2) return false; if (tn) finishTurn(false);
+    v2.scrollLeft = to; tn = { dir, to, p: 0, pageTo: page + dir };
+    v.style.zIndex = dir > 0 ? 3 : 1; v2.style.zIndex = dir > 0 ? 1 : 3; shd.style.zIndex = 2;
+    v.style.transformOrigin = v2.style.transformOrigin = 'left center'; v2.style.visibility = 'visible'; shd.style.display = 'block'; setP(0); return true;
+  };
+  const finishTurn = commit => {
+    if (!tn) return; cancelAnimationFrame(raf); const t = tn; tn = null;
+    for (const x of [v, v2]) { x.style.transform = ''; x.style.filter = ''; x.style.zIndex = ''; x.style.transformOrigin = ''; }
+    v2.style.visibility = 'hidden'; shd.style.display = 'none';
+    if (commit) { v.scrollLeft = t.to; page = t.pageTo; rep(); }
+  };
+  const runTurn = (target, dur, ease, done) => {
+    cancelAnimationFrame(raf); const p0 = tn.p, t0 = performance.now();
+    const step = ts => { const k = Math.min(1, (ts - t0) / dur); setP(p0 + (target - p0) * ease(k)); if (k < 1) raf = requestAnimationFrame(step); else done(); };
     raf = requestAnimationFrame(step);
   };
+  /* Animação simples de página: 'flip' = a página levanta pela borda (rotação 3D com sombra) e a nova desce; 'slide' = desliza; 'none'.
+     O flip usa a Web Animations API sobre o próprio visor (compositor), sem depender de rolagem animada. */
+  let fa = null, pendTo = null;
+  const finishFlip = () => { if (fa) { fa.cancel(); fa = null; } if (pendTo !== null) { v.scrollLeft = pendTo; pendTo = null; } v.style.transform = ''; v.style.opacity = ''; v.style.filter = ''; v.style.transformOrigin = ''; };
+  const toPage = (p, anim = true) => {
+    p = Math.max(0, Math.min(pages - 1, p)); cancelAnimationFrame(raf); if (tn) finishTurn(true); finishFlip();
+    if (anim && R.anim === 'flip' && v2 && p !== page && beginTurn(p > page ? 1 : -1, p * W)) { tn.pageTo = p; runTurn(1, 460, easeIO, () => finishTurn(true)); return; }
+    const to = p * W, from = v.scrollLeft, dir = to >= from ? 1 : -1; page = p;
+    if (!anim || R.anim === 'none' || Math.abs(to - from) < 1) { v.scrollLeft = to; return rep(); }
+    if (R.anim === 'slide') {
+      const t0 = performance.now(), D = 340;
+      const step = t => { const k = Math.min(1, (t - t0) / D), e = 1 - Math.pow(1 - k, 3); v.scrollLeft = from + (to - from) * e; if (k < 1) raf = requestAnimationFrame(step); else rep(); };
+      raf = requestAnimationFrame(step); return;
+    }
+    v.style.transformOrigin = dir > 0 ? 'left center' : 'right center'; pendTo = to;
+    fa = v.animate([{ transform: 'rotateY(0deg)', filter: 'brightness(1)' }, { transform: `rotateY(${-dir * 70}deg)`, filter: 'brightness(.5)' }], { duration: 180, easing: 'cubic-bezier(.45,0,.9,.6)', fill: 'forwards' });
+    fa.onfinish = () => {
+      const first = fa; v.scrollLeft = to; pendTo = null; v.style.transformOrigin = dir > 0 ? 'right center' : 'left center';
+      fa = v.animate([{ transform: `rotateY(${-dir * 70}deg)`, filter: 'brightness(.5)' }, { transform: 'rotateY(0deg)', filter: 'brightness(1)' }], { duration: 220, easing: 'cubic-bezier(.1,.7,.2,1)' });
+      first.cancel();   // a 1ª animação usa fill:'forwards' e deixaria a página girada (invisível) se não fosse cancelada
+      fa.onfinish = () => { fa = null; v.style.transformOrigin = ''; v.style.filter = ''; rep(); };
+    };
+  };
   const lay = () => {
-    const f = ready ? prog() : 0; cancelAnimationFrame(raf); v.style.transform = ''; v.style.opacity = ''; v.className = R.pg ? 'pg' : 'sc';
+    const f = ready ? prog() : 0; cancelAnimationFrame(raf); finishTurn(false); finishFlip(); v.className = R.pg ? 'pg' : 'sc';
     c.style.cssText = `font-size:${R.fs}px;line-height:${R.lh};font-family:${FF[R.ff]};text-align:${R.al === 'justify' ? 'justify' : 'left'}`;
     if (R.pg) {
       W = v.clientWidth; const cols = R.dbl && innerWidth > innerHeight ? 2 : 1;
@@ -188,7 +255,7 @@ async function readText(m, z, info) {
       v.scrollLeft = 0; pages = Math.max(1, Math.ceil(v.scrollWidth / W - .001)); secP = [...c.children].map(s => Math.floor(s.offsetLeft / W + .001));
       if (ready) toPage(Math.round(f * (pages - 1)), false);
     } else { c.style.padding = '0 ' + R.m + 'px'; if (ready) v.scrollTop = f * mx(); }
-    lastSig = sig();
+    lastSig = sig(); sync();
   };
   const jump = h => { const s = [...c.children].find(x => x.dataset.h === h); if (!s) return; if (R.pg) toPage(Math.floor(s.offsetLeft / W + .001)); else s.scrollIntoView(); };
   const link = a => { const h = a.getAttribute('href') || ''; if (h && !/^\w+:/.test(h)) jump(join(dirOf(a.closest('section').dataset.h), h)); };
@@ -198,17 +265,28 @@ async function readText(m, z, info) {
   const PP = new Map(); let pd0 = 0, pinched = 0, ltap = 0, tapT = 0;
   v.onpointerdown = ev => {
     PP.set(ev.pointerId, [ev.clientX, ev.clientY]);
-    if (PP.size === 2) { const [p, q] = [...PP.values()]; pd0 = Math.hypot(p[0] - q[0], p[1] - q[1]); pinched = 0; dg = null; if (R.pg) toPage(page, false); return; }
+    if (PP.size === 2) { const [p, q] = [...PP.values()]; pd0 = Math.hypot(p[0] - q[0], p[1] - q[1]); pinched = 0; dg = null; finishTurn(false); if (R.pg) toPage(page, false); return; }
     if (PP.size > 1 || !R.pg) return;
     cancelAnimationFrame(raf); v.setPointerCapture(ev.pointerId); dg = { x: ev.clientX, y: ev.clientY, s: v.scrollLeft, t: Date.now(), m: 0 };
   };
   v.onpointermove = ev => {
     if (PP.has(ev.pointerId)) PP.set(ev.pointerId, [ev.clientX, ev.clientY]);
     if (PP.size === 2 && pd0) { const [p, q] = [...PP.values()], r = Math.hypot(p[0] - q[0], p[1] - q[1]) / pd0; if (!pinched && r < .8) { pinched = 1; send({ type: 'chrome', on: true }); } else if (!pinched && r > 1.25) { pinched = 1; send({ type: 'chrome', on: false }); } return; }
-    if (!dg) return; const dx = ev.clientX - dg.x; dg.m = Math.max(dg.m, Math.abs(dx) + Math.abs(ev.clientY - dg.y)); if (dg.m > 8) v.scrollLeft = Math.max(0, Math.min((pages - 1) * W, dg.s - dx));
+    if (!dg) return; const dx = ev.clientX - dg.x; dg.m = Math.max(dg.m, Math.abs(dx) + Math.abs(ev.clientY - dg.y)); if (dg.m > 8 && R.anim === 'slide') v.scrollLeft = Math.max(0, Math.min((pages - 1) * W, dg.s - dx));
+    if (dg.m > 8 && R.anim === 'flip' && v2) {   // a página acompanha o dedo
+      if (dg.turn === undefined) { const dir = dx < 0 ? 1 : -1, tgt = page + dir; dg.turn = tgt >= 0 && tgt < pages && beginTurn(dir, tgt * W) ? dir : 0; if (dg.turn) tn.pageTo = tgt; }
+      if (dg.turn) setP(Math.min(1, Math.max(0, (dg.turn > 0 ? -dx : dx) / (W * .9))));
+    }   // só o modo deslizar acompanha o dedo
   };
   v.onpointerup = v.onpointercancel = ev => {
-    PP.delete(ev.pointerId); if (!dg) return; const d = dg, dx = ev.clientX - d.x, vel = Math.abs(dx) / Math.max(1, Date.now() - d.t); dg = null;
+    PP.delete(ev.pointerId); if (!dg) return;
+    if (ev.type === 'pointercancel') { dg = null; finishTurn(false); if (R.pg) toPage(page, false); return; }   // gesto cancelado pelo sistema: não é um soltar (as coordenadas vêm zeradas)
+    const d = dg, dx = ev.clientX - d.x, vel = Math.abs(dx) / Math.max(1, Date.now() - d.t); dg = null;
+    if (d.turn && tn) {   // soltou no meio da virada: completa ou desfaz
+      const go = tn.p > .3 || (vel > .5 && ((dx < 0) === (d.turn > 0)));
+      if (go) runTurn(1, 120 + 260 * (1 - tn.p), easeO, () => finishTurn(true)); else runTurn(0, 120 + 200 * tn.p, easeO, () => finishTurn(false));
+      return;
+    }
     if (d.m < 8) {
       const el = document.elementFromPoint(ev.clientX, ev.clientY), a = el && el.closest && el.closest('a'); if (a) { link(a); return; }
       const x = ev.clientX / innerWidth;
@@ -219,7 +297,7 @@ async function readText(m, z, info) {
     toPage(Math.abs(dx) > W * .22 || vel > .5 ? page + (dx < 0 ? 1 : -1) : page);
   };
   api = {
-    lay, jump,
+    lay, jump, debugTurn: (dir, p) => { finishTurn(false); const tgt = page + dir; if (!beginTurn(dir, tgt * W)) return false; tn.pageTo = tgt; setP(p); return true; }, debugEnd: () => finishTurn(false), hasClone: () => !!v2, state: () => ({ page, pages, W, sl: v.scrollLeft, anim: R.anim, tn: !!tn, dg: !!dg }),
     goto: f => { if (R.pg) toPage(Math.round(f * (pages - 1))); else v.scrollTo({ top: f * mx(), behavior: 'smooth' }); },
     search(q) {
       hits = []; if (window.CSS && CSS.highlights) CSS.highlights.clear(); const ql = q.toLowerCase();
@@ -233,9 +311,11 @@ async function readText(m, z, info) {
   await Promise.race([Promise.all([...c.querySelectorAll('img')].map(im => im.decode ? im.decode().catch(() => 0) : 0)), wait(2500)]);
   lay(); const f0 = m.pos || 0; if (R.pg) toPage(Math.round(f0 * (pages - 1)), false); else v.scrollTop = f0 * mx();
   ready = 1; rep(); v.style.visibility = ''; send({ type: 'shown' });
+  setTimeout(() => { try { mkClone(); } catch (x) { } }, 250);   // cópia para a virada de página, criada com o leitor já aberto
   setTimeout(() => { if (sig() !== lastSig) lay(); }, 1200);   // só repagina se algo ainda mudou o tamanho do conteúdo
 }
 addEventListener('resize', () => { api.lay && api.lay(); });
+document.addEventListener('dragstart', ev => ev.preventDefault());   // arrastar começando numa imagem não pode virar "arrastar e soltar" (cancelava o gesto)
 
 window.OUTCH = 1500000;                                  // tamanho dos blocos de saída (múltiplo de 4)
 const PEND = {};

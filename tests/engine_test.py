@@ -74,11 +74,67 @@ with sync_playwright() as p:
     def tap(x,y=400): pg.mouse.move(x,y); pg.mouse.down(); pg.mouse.up()
     p0=page_now(); tap(360); pg.wait_for_timeout(700); check('toque na borda direita: próxima página',page_now()==p0+1,(p0,page_now()))
     tap(20); pg.wait_for_timeout(700); check('toque na borda esquerda: página anterior',page_now()==p0,(p0,page_now()))
-    # animação: amostra o scrollLeft durante a virada
+    # animação 'slide': amostra o scrollLeft durante a virada
+    pg.evaluate("m=>window.onRN(m)",{'cmd':'set','set':{'anim':'slide'}}); pg.wait_for_timeout(200)
     samples=[]; tap(360)
     for _ in range(8): samples.append(pg.evaluate("document.querySelector('#rv').scrollLeft")); pg.wait_for_timeout(40)
     pg.wait_for_timeout(500)
     check('animação de virada passa por posições intermediárias',len(set(round(s) for s in samples))>=4,samples)
+    pg.evaluate("m=>window.onRN(m)",{'cmd':'set','set':{'anim':'flip'}}); pg.wait_for_timeout(200)
+    import io
+    from PIL import Image,ImageStat
+    lum=lambda:ImageStat.Stat(Image.open(io.BytesIO(pg.screenshot())).convert('L')).mean[0]
+    ok_vis=[]; tilt=[]
+    for _ in range(3):
+        tap(360); t0=time.time()
+        while time.time()-t0<0.75:
+            tilt.append(pg.evaluate("getComputedStyle(document.querySelector('#rv')).transform")); pg.wait_for_timeout(25)
+        ok_vis.append(lum())
+    check('flip 3D: a página gira durante a virada (matrix3d)',len([x for x in tilt if 'matrix3d' in x])>=5,len([x for x in tilt if 'matrix3d' in x]))
+    check('flip 3D: depois de CADA virada o texto está visível (não fica girado/preto)',all(v>8 for v in ok_vis),ok_vis)
+    check('flip 3D: estado final limpo (sem transform/filtro presos)',pg.evaluate("getComputedStyle(document.querySelector('#rv')).transform")=='none' and pg.evaluate("getComputedStyle(document.querySelector('#rv')).filter")=='none')
+    # ---- gesto começando sobre uma imagem do livro (antes virava arrastar-e-soltar e cancelava o gesto) — nos modos slide e flip
+    for mode_ in ('slide','flip'):
+        pg.evaluate("m=>window.onRN(m)",{'cmd':'set','set':{'anim':mode_}}); pg.wait_for_timeout(300)
+        ipg=pg.evaluate("(()=>{const im=document.querySelector('#rc img[src^=blob]');const v=document.querySelector('#rv');const r=im.getBoundingClientRect();return Math.floor((r.left+v.scrollLeft)/v.clientWidth)})()")
+        npg=pg.evaluate("api.state().pages"); pg.evaluate("m=>window.onRN(m)",{'cmd':'goto','f':ipg/(npg-1)}); pg.wait_for_timeout(900)
+        box=pg.evaluate("(()=>{const im=document.querySelector('#rc img[src^=blob]');const r=im.getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2]})()")
+        on_img=pg.evaluate("([x,y])=>document.elementFromPoint(x,y).tagName",box); b0=page_now()
+        pg.mouse.move(box[0]-60,box[1]); pg.mouse.down(); pg.wait_for_timeout(100)
+        for k in range(1,6): pg.mouse.move(box[0]-60+k*45,box[1]); pg.wait_for_timeout(60)   # para a direita = página anterior
+        pg.wait_for_timeout(100); pg.mouse.up(); pg.wait_for_timeout(900)
+        check(f'deslizar para a direita começando SOBRE uma imagem volta a página ({mode_})',on_img=='IMG' and page_now()==b0-1,(on_img,b0,page_now()))
+    clean=lambda:pg.evaluate("[getComputedStyle(document.querySelector('#rv')).transform,getComputedStyle(document.querySelector('#rv2')).transform,getComputedStyle(document.querySelector('#rv2')).visibility,getComputedStyle(document.querySelector('#shd')).display]")==['none','none','hidden','none']
+    # ---- gesto cancelado pelo sistema (pointercancel, coordenadas zeradas) não pode virar página
+    for mode_ in ('slide','flip'):
+        pg.evaluate("m=>window.onRN(m)",{'cmd':'set','set':{'anim':mode_}}); pg.wait_for_timeout(300); b0=page_now()
+        pg.mouse.move(300,400); pg.mouse.down(); pg.wait_for_timeout(100); pg.mouse.move(250,400); pg.wait_for_timeout(100); pg.mouse.move(235,400); pg.wait_for_timeout(100)
+        pg.evaluate("()=>document.querySelector('#rv').dispatchEvent(new PointerEvent('pointercancel',{pointerId:1,clientX:0,clientY:0,bubbles:true,pointerType:'mouse'}))"); pg.wait_for_timeout(700)
+        st=pg.evaluate("api.state()"); pg.mouse.up(); pg.wait_for_timeout(300)
+        check(f'pointercancel no meio do arrasto: nada é virado e o estado é limpo ({mode_})',page_now()==b0 and not st['dg'] and not st['tn'] and clean(),(b0,page_now(),st))
+    # ---- virada realista em duas camadas
+    check('virada realista: cópia do texto criada para a camada de baixo',pg.evaluate("api.hasClone()"))
+    check('virada realista: páginas opacas (a que vira esconde a de baixo)',pg.evaluate("getComputedStyle(document.querySelector('#rv')).backgroundColor")!='rgba(0, 0, 0, 0)')
+    def sample(ms=700):
+        out=[]; t0=time.time()
+        while time.time()-t0<ms/1000:
+            out.append(pg.evaluate("[getComputedStyle(document.querySelector('#rv')).transform,getComputedStyle(document.querySelector('#rv2')).transform,getComputedStyle(document.querySelector('#rv2')).visibility,getComputedStyle(document.querySelector('#shd')).display]")); pg.wait_for_timeout(25)
+        return out
+    clean=lambda:pg.evaluate("[getComputedStyle(document.querySelector('#rv')).transform,getComputedStyle(document.querySelector('#rv2')).transform,getComputedStyle(document.querySelector('#rv2')).visibility,getComputedStyle(document.querySelector('#shd')).display]")==['none','none','hidden','none']
+    b0=page_now(); tap(360); s1=sample(); pg.wait_for_timeout(200)
+    check('virada realista (ida): página gira e a de baixo fica visível',len([x for x in s1 if 'matrix3d' in x[0] and x[2]=='visible' and x[3]=='block'])>=5,len(s1))
+    check('virada realista (ida): termina limpa e na página seguinte',clean() and page_now()==b0+1 and lum()>8,(b0,page_now()))
+    b0=page_now(); tap(20); s2=sample(); pg.wait_for_timeout(200)
+    check('virada realista (volta): a página anterior gira de volta por cima',len([x for x in s2 if 'matrix3d' in x[1] and x[2]=='visible'])>=5,len(s2))
+    check('virada realista (volta): termina limpa e na página anterior',clean() and page_now()==b0-1 and lum()>8,(b0,page_now()))
+    b0=page_now(); pg.mouse.move(300,400); pg.mouse.down(); pg.wait_for_timeout(150); pg.mouse.move(250,400); pg.wait_for_timeout(150); pg.mouse.move(235,400); pg.wait_for_timeout(250)   # dedo lento: sem 'arremesso'
+    mid=pg.evaluate("[getComputedStyle(document.querySelector('#rv')).transform,document.querySelector('#rv2').style.visibility,0]"); mid[2]=page_now(); pg.mouse.up(); pg.wait_for_timeout(700)
+    check('arrastar: a página acompanha o dedo (gira sem trocar de página)','matrix3d' in mid[0] and mid[1]=='visible' and mid[2]==b0,mid)
+    check('arrastar pouco e soltar: desfaz a virada (mesma página, estado limpo)',page_now()==b0 and clean(),(b0,page_now()))
+    pg.mouse.move(320,400); pg.mouse.down(); pg.wait_for_timeout(100); pg.mouse.move(250,400); pg.wait_for_timeout(100); pg.mouse.move(150,400); pg.wait_for_timeout(100); pg.mouse.move(90,400); pg.wait_for_timeout(150); pg.mouse.up(); pg.wait_for_timeout(800)
+    check('arrastar bastante e soltar: completa a virada',page_now()==b0+1 and clean(),(b0,page_now()))
+    pg.evaluate("m=>window.onRN(m)",{'cmd':'set','set':{'anim':'none'}}); pg.wait_for_timeout(200); n0=page_now(); tap(360); pg.wait_for_timeout(120); check('sem animação: troca de página imediata',page_now()==n0+1,(n0,page_now()))
+    pg.evaluate("m=>window.onRN(m)",{'cmd':'set','set':{'anim':'slide'}}); pg.wait_for_timeout(200)
     pg.mouse.move(300,400); pg.mouse.down(); 
     for k in range(1,9): pg.mouse.move(300-k*25,400)
     pg.mouse.up(); pg.wait_for_timeout(700); p1=page_now(); check('deslizar para a esquerda: próxima página',p1>=p0+2,(p0,p1))
@@ -118,7 +174,9 @@ with sync_playwright() as p:
     if chunked: feed('read','hq.cbz',reply=False,kind='cbz',mode='img',pos=0,set={})
     else: pg.evaluate('m=>window.onRN(m)',dict(cmd='read',b64=b64('hq.cbz'),kind='cbz',mode='img',pos=0,set={}))
     wait(lambda m:m.get('type')=='shown'); ip=last('pos'); check('quadrinhos: 6 páginas',ip and ip['pages']==6,ip)
-    tap(350); pg.wait_for_timeout(900); check('quadrinhos: toque vira a página (animada)',last('pos')['page']==2,last('pos'))
+    tap(350); pg.wait_for_timeout(150); mid_i=pg.evaluate("[getComputedStyle(document.querySelector('#sp')).transform,getComputedStyle(document.querySelector('#sp2')).visibility]"); check('quadrinhos: toque na borda começa a virar na hora (sem esperar duplo toque)','matrix3d' in mid_i[0] and mid_i[1]=='visible',mid_i)
+    pg.wait_for_timeout(750); check('quadrinhos: toque vira a página (animada)',last('pos')['page']==2,last('pos'))
+    check('quadrinhos (flip): imagem visível, camadas limpas depois da virada',pg.evaluate("[getComputedStyle(document.querySelector('#sp')).transform,getComputedStyle(document.querySelector('#sp2')).visibility,getComputedStyle(document.querySelector('#shdi')).display]")==['none','hidden','none'] and ImageStat.Stat(Image.open(io.BytesIO(pg.screenshot())).convert('L')).mean[0]>8)
     pg.mouse.move(300,400); pg.mouse.down()
     for k in range(1,6): pg.mouse.move(300-k*30,400)
     pg.mouse.up(); pg.wait_for_timeout(900); check('quadrinhos: deslizar vira a página',last('pos')['page']==3,last('pos'))

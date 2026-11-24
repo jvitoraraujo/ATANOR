@@ -1,6 +1,6 @@
 // Gera src/engineHtml.js: uma página única (JSZip + pdf.js + engine) embutida, 100% offline.
 const fs = require('fs');
-const lib = p => fs.readFileSync(require.resolve(p), 'utf8');
+const lib = p => { try { return fs.readFileSync(require.resolve(p), 'utf8'); } catch (e) { console.error('\nFalta a dependência "' + p.split('/')[0] + '". Rode: npm install --ignore-scripts  (e depois: npm run build:engine)\n'); process.exit(1); } };
 const js = [
   lib('jszip/dist/jszip.min.js'),
   lib('pdfjs-dist/legacy/build/pdf.min.js'),
